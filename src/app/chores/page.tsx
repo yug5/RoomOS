@@ -1,62 +1,105 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
 import BottomNav from "@/components/BottomNav";
 import { Check, Plus } from "lucide-react";
-
-interface Chore {
-  id: number;
-  name: string;
-  assignee: "Yug" | "Rahul";
-  due: string;
-  done: boolean;
-}
+import { useRoomContext, ChoreItem } from "@/lib/RoomContext";
+import { supabase } from "@/lib/supabase";
 
 export default function ChoresPage() {
-  // Hardcoded default chores in state
-  const [chores, setChores] = useState<Chore[]>([
-    { id: 1, name: "Clean Room", assignee: "Yug", due: "Today", done: false },
-    { id: 2, name: "Take Out Trash", assignee: "Rahul", due: "Today", done: false },
-    { id: 3, name: "Fill Water Bottles", assignee: "Yug", due: "Tomorrow", done: false },
-    { id: 4, name: "Wash Dishes", assignee: "Rahul", due: "Done", done: true },
-  ]);
+  const { profile, roomId, userId, loading, chores, members, refetchChores } = useRoomContext();
 
   const [activeTab, setActiveTab] = useState<"Pending" | "Completed">("Pending");
   const [showModal, setShowModal] = useState(false);
 
   // Form states
   const [choreName, setChoreName] = useState("");
-  const [assignee, setAssignee] = useState<"Yug" | "Rahul">("Yug");
+  const [assignee, setAssignee] = useState("");
   const [dueDate, setDueDate] = useState("");
 
-  const toggleChore = (id: number) => {
-    setChores(
-      chores.map((chore) =>
-        chore.id === id ? { ...chore, done: !chore.done, due: !chore.done ? "Done" : "Today" } : chore
-      )
-    );
+  const roommates = members.filter((m) => m.id !== userId);
+
+  useEffect(() => {
+    if (profile) {
+      setAssignee(profile.name);
+    }
+  }, [profile]);
+
+  const toggleChore = async (chore: ChoreItem) => {
+    try {
+      const newDone = !chore.done;
+      const { error } = await supabase
+        .from('chores')
+        .update({ done: newDone })
+        .eq('id', chore.id);
+
+      if (error) throw error;
+
+      if (newDone) {
+        await supabase.from('activity').insert({
+          room_id: roomId,
+          user_name: profile?.name || 'User',
+          action: `completed ${chore.name} ✅`
+        });
+      }
+
+      await refetchChores();
+    } catch (err) {
+      console.error('Error toggling chore:', err);
+    }
   };
 
-  const handleAddChore = (e: React.FormEvent) => {
+  const handleAddChore = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!choreName || !dueDate) return;
+    if (!choreName || !dueDate || !roomId || !userId) return;
 
-    const newChore: Chore = {
-      id: Date.now(),
-      name: choreName,
-      assignee,
-      due: dueDate,
-      done: false,
-    };
+    try {
+      // Get assignee profile id
+      const { data: assigneeProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('room_id', roomId)
+        .eq('name', assignee)
+        .single();
 
-    setChores([...chores, newChore]);
-    setChoreName("");
-    setDueDate("");
-    setAssignee("Yug");
-    setShowModal(false);
+      const { error: insertError } = await supabase
+        .from('chores')
+        .insert({
+          room_id: roomId,
+          name: choreName,
+          assignee: assigneeProfile?.id || userId,
+          due_date: dueDate,
+          done: false
+        });
+
+      if (insertError) throw insertError;
+
+      // Log activity
+      await supabase.from('activity').insert({
+        room_id: roomId,
+        user_name: profile?.name || 'User',
+        action: `added chore: ${choreName} ✅`
+      });
+
+      await refetchChores();
+
+      // Reset
+      setChoreName("");
+      setDueDate("");
+      setAssignee(profile?.name || "");
+      setShowModal(false);
+    } catch (err) {
+      console.error('Error adding chore:', err);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="w-8 h-8 border-2 border-[#9b7fe8] border-t-transparent rounded-full animate-spin mx-auto mt-20" />
+    );
+  }
 
   const filteredChores = chores.filter((chore) =>
     activeTab === "Pending" ? !chore.done : chore.done
@@ -71,7 +114,7 @@ export default function ChoresPage() {
         <button
           type="button"
           onClick={() => setActiveTab("Pending")}
-          className={`flex-1 py-2 px-4 rounded-[999px] text-sm font-semibold transition-colors border focus:outline-none ${
+          className={`flex-1 py-2 px-4 rounded-[999px] text-sm font-semibold transition-colors border focus:outline-none cursor-pointer ${
             activeTab === "Pending"
               ? "bg-[#9b7fe8] border-[#9b7fe8] text-white"
               : "bg-transparent border-white/10 text-white/60 hover:text-white"
@@ -82,7 +125,7 @@ export default function ChoresPage() {
         <button
           type="button"
           onClick={() => setActiveTab("Completed")}
-          className={`flex-1 py-2 px-4 rounded-[999px] text-sm font-semibold transition-colors border focus:outline-none ${
+          className={`flex-1 py-2 px-4 rounded-[999px] text-sm font-semibold transition-colors border focus:outline-none cursor-pointer ${
             activeTab === "Completed"
               ? "bg-[#9b7fe8] border-[#9b7fe8] text-white"
               : "bg-transparent border-white/10 text-white/60 hover:text-white"
@@ -95,46 +138,50 @@ export default function ChoresPage() {
       {/* Chores List */}
       <section className="flex flex-col gap-3">
         {filteredChores.length > 0 ? (
-          filteredChores.map((chore) => (
-            <GlassCard key={chore.id} className="flex items-center gap-3 p-4">
-              {/* Checkbox button */}
-              <button
-                type="button"
-                onClick={() => toggleChore(chore.id)}
-                className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center transition-colors focus:outline-none flex-shrink-0 cursor-pointer ${
-                  chore.done
-                    ? "bg-[#9b7fe8] border-[#9b7fe8] text-white"
-                    : "border-white/20 bg-transparent"
-                }`}
-              >
-                {chore.done && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-              </button>
-
-              {/* Middle Info */}
-              <div className="flex flex-col min-w-0">
-                <span 
-                  className={`text-[15px] font-semibold truncate ${
-                    chore.done ? "text-white/30 line-through" : "text-white"
+          filteredChores.map((chore) => {
+            const assigneeName = chore.profiles?.name || (chore.assignee === userId ? (profile?.name || "You") : "Roommate");
+            
+            return (
+              <GlassCard key={chore.id} className="flex items-center gap-3 p-4">
+                {/* Checkbox button */}
+                <button
+                  type="button"
+                  onClick={() => toggleChore(chore)}
+                  className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center transition-colors focus:outline-none flex-shrink-0 cursor-pointer ${
+                    chore.done
+                      ? "bg-[#9b7fe8] border-[#9b7fe8] text-white"
+                      : "border-white/20 bg-transparent"
                   }`}
                 >
-                  {chore.name}
-                </span>
-                <span className="text-white/50 text-[12px] mt-0.5 select-none">
-                  Assigned to {chore.assignee} · Due {chore.due}
-                </span>
-              </div>
+                  {chore.done && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </button>
 
-              {/* Right Assignee Avatar */}
-              <div className="ml-auto flex-shrink-0">
-                <div 
-                  className="w-8 h-8 rounded-full bg-[#9b7fe8] flex items-center justify-center text-white font-bold text-xs select-none"
-                  title={`Assigned to ${chore.assignee}`}
-                >
-                  {chore.assignee[0]}
+                {/* Middle Info */}
+                <div className="flex flex-col min-w-0">
+                  <span 
+                    className={`text-[15px] font-semibold truncate ${
+                      chore.done ? "text-white/30 line-through" : "text-white"
+                    }`}
+                  >
+                    {chore.name}
+                  </span>
+                  <span className="text-white/50 text-[12px] mt-0.5 select-none">
+                    Assigned to {assigneeName} · Due {chore.due_date}
+                  </span>
                 </div>
-              </div>
-            </GlassCard>
-          ))
+
+                {/* Right Assignee Avatar */}
+                <div className="ml-auto flex-shrink-0">
+                  <div 
+                    className="w-8 h-8 rounded-full bg-[#9b7fe8] flex items-center justify-center text-white font-bold text-xs select-none"
+                    title={`Assigned to ${assigneeName}`}
+                  >
+                    {(assigneeName || "U")[0].toUpperCase()}
+                  </div>
+                </div>
+              </GlassCard>
+            );
+          })
         ) : (
           <div className="text-center text-white/40 py-8 text-sm">
             No chores in this tab.
@@ -145,7 +192,7 @@ export default function ChoresPage() {
       {/* Floating Add Chore Button */}
       <button
         onClick={() => setShowModal(true)}
-        className="fixed bottom-24 right-6 w-14 h-14 rounded-full bg-[#9b7fe8] text-white flex items-center justify-center shadow-[0_4px_20px_rgba(155,127,232,0.4)] border-0 focus:outline-none z-40 active:scale-95 transition-transform"
+        className="fixed bottom-28 right-6 w-14 h-14 rounded-full bg-[#9b7fe8] text-white flex items-center justify-center shadow-[0_4px_20px_rgba(155,127,232,0.4)] border-0 focus:outline-none z-40 active:scale-95 transition-transform cursor-pointer"
         aria-label="Add Chore"
       >
         <Plus className="w-6 h-6" />
@@ -184,25 +231,30 @@ export default function ChoresPage() {
                 <div className="flex bg-white/[0.06] p-1 rounded-[12px] border border-white/[0.12]">
                   <button
                     type="button"
-                    onClick={() => setAssignee("Yug")}
-                    className={`flex-1 py-2 rounded-[9px] text-sm font-semibold transition-colors border-0 focus:outline-none ${
-                      assignee === "Yug"
+                    onClick={() => setAssignee(profile?.name || "")}
+                    className={`flex-1 py-2 rounded-[999px] text-sm font-semibold transition-colors border-0 focus:outline-none cursor-pointer ${
+                      assignee === profile?.name
                         ? "bg-[#9b7fe8] text-white"
                         : "bg-transparent text-white/60"
                     }`}
                   >
-                    Yug
+                    {profile?.name || "You"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAssignee("Rahul")}
-                    className={`flex-1 py-2 rounded-[9px] text-sm font-semibold transition-colors border-0 focus:outline-none ${
-                      assignee === "Rahul"
+                    disabled={roommates.length === 0}
+                    onClick={() => {
+                      if (roommates.length > 0) {
+                        setAssignee(roommates[0].name);
+                      }
+                    }}
+                    className={`flex-1 py-2 rounded-[999px] text-sm font-semibold transition-colors border-0 focus:outline-none cursor-pointer ${
+                      roommates.length > 0 && assignee === roommates[0].name
                         ? "bg-[#9b7fe8] text-white"
-                        : "bg-transparent text-white/60"
+                        : "bg-transparent text-white/60 disabled:opacity-40"
                     }`}
                   >
-                    Rahul
+                    {roommates[0]?.name || "Roommate"}
                   </button>
                 </div>
               </div>
@@ -226,14 +278,14 @@ export default function ChoresPage() {
               <div className="flex flex-col gap-2 mt-2">
                 <button
                   type="submit"
-                  className="w-full bg-[#9b7fe8] text-white font-bold rounded-[12px] py-3.5 text-[15px] border-0 hover:bg-[#886cd4] transition-colors focus:outline-none"
+                  className="w-full bg-[#9b7fe8] text-white font-bold rounded-[12px] py-3.5 text-[15px] border-0 hover:bg-[#886cd4] transition-colors focus:outline-none cursor-pointer"
                 >
                   Submit
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="text-center text-white/40 text-[13px] hover:text-white/60 transition-colors py-1 bg-transparent border-0 focus:outline-none"
+                  className="text-center text-white/40 text-[13px] hover:text-white/60 transition-colors py-1 bg-transparent border-0 focus:outline-none cursor-pointer"
                 >
                   Cancel
                 </button>

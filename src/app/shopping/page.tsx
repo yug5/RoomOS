@@ -5,52 +5,83 @@ import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
 import BottomNav from "@/components/BottomNav";
 import { Check, Trash2 } from "lucide-react";
+import { useRoomContext } from "@/lib/RoomContext";
+import { supabase } from "@/lib/supabase";
 
 interface ShoppingItem {
-  id: number;
+  id: string | number;
   name: string;
   done: boolean;
 }
 
 export default function ShoppingPage() {
-  // Hardcoded default items in state
-  const [items, setItems] = useState<ShoppingItem[]>([
-    { id: 1, name: "Milk", done: false },
-    { id: 2, name: "Bread", done: false },
-    { id: 3, name: "Shampoo", done: true },
-    { id: 4, name: "Detergent", done: false },
-  ]);
-
+  const { profile, roomId, loading, shoppingItems: items, refetchShopping } = useRoomContext();
   const [inputVal, setInputVal] = useState("");
 
   // Toggle checklist item
-  const toggleItem = (id: number) => {
-    setItems(
-      items.map((item) =>
-        item.id === id ? { ...item, done: !item.done } : item
-      )
-    );
+  const toggleItem = async (item: ShoppingItem) => {
+    try {
+      const { error } = await supabase
+        .from('shopping_items')
+        .update({ done: !item.done })
+        .eq('id', item.id);
+      
+      if (error) throw error;
+      // Fetch will be triggered by realtime subscription, but refetching locally for safety
+      refetchShopping();
+    } catch (err) {
+      console.error('Error toggling item:', err);
+    }
   };
 
   // Remove checklist item
-  const removeItem = (id: number) => {
-    setItems(items.filter((item) => item.id !== id));
+  const removeItem = async (item: ShoppingItem) => {
+    try {
+      const { error } = await supabase
+        .from('shopping_items')
+        .delete()
+        .eq('id', item.id);
+      
+      if (error) throw error;
+      refetchShopping();
+    } catch (err) {
+      console.error('Error removing item:', err);
+    }
   };
 
   // Add checklist item
-  const addItem = (e?: React.FormEvent) => {
+  const addItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputVal.trim()) return;
+    if (!inputVal.trim() || !roomId) return;
 
-    const newItem: ShoppingItem = {
-      id: Date.now(),
-      name: inputVal.trim(),
-      done: false,
-    };
-
-    setItems([...items, newItem]);
+    const newItemName = inputVal.trim();
     setInputVal("");
+
+    try {
+      const { error: insertError } = await supabase
+        .from('shopping_items')
+        .insert({ room_id: roomId, name: newItemName, done: false });
+
+      if (insertError) throw insertError;
+
+      // Log activity
+      await supabase.from('activity').insert({
+        room_id: roomId,
+        user_name: profile?.name || 'User',
+        action: `added ${newItemName} to shopping list 🛒`
+      });
+
+      refetchShopping();
+    } catch (err) {
+      console.error('Error adding item:', err);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="w-8 h-8 border-2 border-[#9b7fe8] border-t-transparent rounded-full animate-spin mx-auto mt-20" />
+    );
+  }
 
   const pendingItems = items.filter((item) => !item.done);
   const completedItems = items.filter((item) => item.done);
@@ -70,7 +101,7 @@ export default function ShoppingPage() {
         />
         <button
           type="submit"
-          className="bg-[#9b7fe8] text-white font-bold rounded-[12px] px-5 py-3 border-0 hover:bg-[#886cd4] transition-colors focus:outline-none text-sm whitespace-nowrap"
+          className="bg-[#9b7fe8] text-white font-bold rounded-[12px] px-5 py-3 border-0 hover:bg-[#886cd4] transition-colors focus:outline-none text-sm whitespace-nowrap cursor-pointer"
         >
           Add
         </button>
@@ -84,7 +115,7 @@ export default function ShoppingPage() {
               {/* Checkbox circle */}
               <button
                 type="button"
-                onClick={() => toggleItem(item.id)}
+                onClick={() => toggleItem(item)}
                 className="w-[22px] h-[22px] rounded-full border-2 border-white/20 flex items-center justify-center bg-transparent transition-colors focus:outline-none cursor-pointer"
               >
                 {/* Unchecked space */}
@@ -98,7 +129,7 @@ export default function ShoppingPage() {
               {/* Trash/delete button */}
               <button
                 type="button"
-                onClick={() => removeItem(item.id)}
+                onClick={() => removeItem(item)}
                 className="ml-auto text-white/30 hover:text-white/60 transition-colors p-1 bg-transparent border-0 focus:outline-none cursor-pointer"
                 aria-label={`Delete ${item.name}`}
               >
@@ -125,7 +156,7 @@ export default function ShoppingPage() {
                 {/* Checked checkbox circle */}
                 <button
                   type="button"
-                  onClick={() => toggleItem(item.id)}
+                  onClick={() => toggleItem(item)}
                   className="w-[22px] h-[22px] rounded-full bg-[#9b7fe8] border-2 border-[#9b7fe8] flex items-center justify-center transition-colors focus:outline-none cursor-pointer text-white"
                 >
                   <Check className="w-3.5 h-3.5 stroke-[3]" />
@@ -139,7 +170,7 @@ export default function ShoppingPage() {
                 {/* Trash/delete button */}
                 <button
                   type="button"
-                  onClick={() => removeItem(item.id)}
+                  onClick={() => removeItem(item)}
                   className="ml-auto text-white/30 hover:text-white/60 transition-colors p-1 bg-transparent border-0 focus:outline-none cursor-pointer"
                   aria-label={`Delete ${item.name}`}
                 >

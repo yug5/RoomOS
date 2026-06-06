@@ -5,49 +5,81 @@ import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
 import BottomNav from "@/components/BottomNav";
 import { Plus, X } from "lucide-react";
-
-interface Note {
-  id: number;
-  text: string;
-  time: string;
-}
+import { useRoomContext } from "@/lib/RoomContext";
+import { supabase } from "@/lib/supabase";
 
 export default function NotesPage() {
-  // Hardcoded default notes in state
-  const [notes, setNotes] = useState<Note[]>([
-    { id: 1, text: "Pay electricity bill before 15th", time: "2 mins ago" },
-    { id: 2, text: "Exam on Monday — keep it quiet 🤫", time: "1 hour ago" },
-    { id: 3, text: "Call landlord about hot water", time: "Yesterday" },
-    { id: 4, text: "Buy detergent this week", time: "2 days ago" },
-  ]);
+  const { profile, roomId, userId, loading, notes, refetchNotes } = useRoomContext();
 
   const [showModal, setShowModal] = useState(false);
   const [noteText, setNoteText] = useState("");
 
-  const handleDelete = (id: number) => {
-    setNotes(notes.filter((note) => note.id !== id));
+  const handleDelete = async (noteId: string | number) => {
+    try {
+      const { error } = await supabase
+        .from('notes')
+        .delete()
+        .eq('id', noteId);
+      
+      if (error) throw error;
+      await refetchNotes();
+    } catch (err) {
+      console.error('Error deleting note:', err);
+    }
   };
 
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!noteText.trim()) return;
+    if (!noteText.trim() || !roomId || !userId) return;
 
-    const newNote: Note = {
-      id: Date.now(),
-      text: noteText.trim(),
-      time: "Just now",
-    };
+    try {
+      const text = noteText.trim();
+      const { error: insertError } = await supabase
+        .from('notes')
+        .insert({
+          room_id: roomId,
+          text: text,
+          created_by: userId
+        });
 
-    setNotes([newNote, ...notes]);
-    setNoteText("");
-    setShowModal(false);
+      if (insertError) throw insertError;
+
+      // Log activity
+      await supabase.from('activity').insert({
+        room_id: roomId,
+        user_name: profile?.name || 'User',
+        action: `added a note 📝`
+      });
+
+      await refetchNotes();
+      setNoteText("");
+      setShowModal(false);
+    } catch (err) {
+      console.error('Error adding note:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="w-8 h-8 border-2 border-[#9b7fe8] border-t-transparent rounded-full animate-spin mx-auto mt-20" />
+    );
+  }
+
+  const formatTime = (ts: string) => {
+    const diff = Date.now() - new Date(ts).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} mins ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
+    return `${Math.floor(hrs / 24)} days ago`;
   };
 
   return (
     <main className="flex-1 flex flex-col gap-6 px-6 pt-5 pb-[120px] w-full relative">
       <PageHeader title="Notes" showBack={false} />
 
-      {/* Masonry-style layout: CSS columns 1, gap 12px */}
+      {/* Masonry-style layout */}
       <section className="flex flex-col gap-3">
         {notes.length > 0 ? (
           notes.map((note) => (
@@ -69,7 +101,7 @@ export default function NotesPage() {
 
               {/* Timestamp */}
               <span className="text-white/35 text-[11px] select-none mt-1">
-                {note.time}
+                {formatTime(note.created_at)}
               </span>
             </GlassCard>
           ))
@@ -83,7 +115,7 @@ export default function NotesPage() {
       {/* Floating Add Note Button */}
       <button
         onClick={() => setShowModal(true)}
-        className="fixed bottom-24 right-6 w-14 h-14 rounded-full bg-[#9b7fe8] text-white flex items-center justify-center shadow-[0_4px_20px_rgba(155,127,232,0.4)] border-0 focus:outline-none z-40 active:scale-95 transition-transform"
+        className="fixed bottom-28 right-6 w-14 h-14 rounded-full bg-[#9b7fe8] text-white flex items-center justify-center shadow-[0_4px_20px_rgba(155,127,232,0.4)] border-0 focus:outline-none z-40 active:scale-95 transition-transform cursor-pointer"
         aria-label="Add Note"
       >
         <Plus className="w-6 h-6" />
@@ -117,14 +149,14 @@ export default function NotesPage() {
               <div className="flex flex-col gap-2 mt-2">
                 <button
                   type="submit"
-                  className="w-full bg-[#9b7fe8] text-white font-bold rounded-[12px] py-3.5 text-[15px] border-0 hover:bg-[#886cd4] transition-colors focus:outline-none"
+                  className="w-full bg-[#9b7fe8] text-white font-bold rounded-[12px] py-3.5 text-[15px] border-0 hover:bg-[#886cd4] transition-colors focus:outline-none cursor-pointer"
                 >
                   Submit
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="text-center text-white/40 text-[13px] hover:text-white/60 transition-colors py-1 bg-transparent border-0 focus:outline-none"
+                  className="text-center text-white/40 text-[13px] hover:text-white/60 transition-colors py-1 bg-transparent border-0 focus:outline-none cursor-pointer"
                 >
                   Cancel
                 </button>

@@ -10,3 +10,8 @@ html, body {
   font-family: 'Inter', sans-serif;
   min-height: 100vh;
 }
+
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}

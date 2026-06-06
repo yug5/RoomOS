@@ -2,10 +2,10 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Home, DollarSign, ShoppingCart, CheckSquare, FileText } from "lucide-react";
+import { Home, DollarSign, ShoppingCart, CheckSquare, FileText, User } from "lucide-react";
 
 interface BottomNavProps {
-  active: 'home' | 'expenses' | 'shopping' | 'chores' | 'notes';
+  active: 'home' | 'expenses' | 'shopping' | 'chores' | 'notes' | 'profile';
 }
 
 export default function BottomNav({ active }: BottomNavProps) {
@@ -17,6 +17,7 @@ export default function BottomNav({ active }: BottomNavProps) {
     { id: 'shopping', label: 'Shopping', path: '/shopping', icon: ShoppingCart },
     { id: 'chores', label: 'Chores', path: '/chores', icon: CheckSquare },
     { id: 'notes', label: 'Notes', path: '/notes', icon: FileText },
+    { id: 'profile', label: 'Profile', path: '/profile', icon: User },
   ] as const;
 
   return (
@@ -28,10 +29,10 @@ export default function BottomNav({ active }: BottomNavProps) {
         background: 'rgba(255, 255, 255, 0.08)',
         border: '1px solid rgba(255, 255, 255, 0.15)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-        padding: '12px 28px',
+        padding: '12px 20px',
       }}
     >
-      <div className="flex items-center gap-[32px]">
+      <div className="flex items-center gap-[22px]">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = active === item.id;
@@ -40,7 +41,7 @@ export default function BottomNav({ active }: BottomNavProps) {
               key={item.id}
               id={`nav-${item.id}`}
               onClick={() => router.push(item.path)}
-              className="flex flex-col items-center gap-1 transition-colors bg-transparent border-0 p-0 focus:outline-none"
+              className="flex flex-col items-center gap-1 transition-colors bg-transparent border-0 p-0 focus:outline-none cursor-pointer"
               style={{
                 color: isActive ? '#9b7fe8' : 'rgba(255, 255, 255, 0.4)',
               }}
