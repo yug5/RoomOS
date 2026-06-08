@@ -4,38 +4,54 @@ import React, { useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import GlassCard from "@/components/GlassCard";
 import BottomNav from "@/components/BottomNav";
-import { Check, Trash2 } from "lucide-react";
-import { useRoomContext } from "@/lib/RoomContext";
+import { useRoomContext, ShoppingItem } from "@/lib/RoomContext";
 import { supabase } from "@/lib/supabase";
-
-interface ShoppingItem {
-  id: string | number;
-  name: string;
-  done: boolean;
-}
+import { useToast } from "@/components/Toast";
+import { Skeleton } from "@/components/Skeleton";
+import { PullToRefresh } from "@/components/PullToRefresh";
 
 export default function ShoppingPage() {
-  const { profile, roomId, loading, shoppingItems: items, refetchShopping } = useRoomContext();
+  const { showToast } = useToast();
+  const { profile, roomId, userId, loading, initialized, shoppingItems: items, refetchShopping, refetchActivity, refetchAll, setShoppingItems } = useRoomContext();
   const [inputVal, setInputVal] = useState("");
+
+  // Swipe to delete states
+  const [swipedId, setSwipedId] = useState<string | number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   // Toggle checklist item
   const toggleItem = async (item: ShoppingItem) => {
+    // Optimistic update
+    setShoppingItems(prev => prev.map(i => 
+      i.id === item.id ? {...i, done: !i.done} : i
+    ))
+    navigator.vibrate?.(10) // haptic
+    
     try {
       const { error } = await supabase
         .from('shopping_items')
         .update({ done: !item.done })
-        .eq('id', item.id);
+        .eq('id', item.id)
       
       if (error) throw error;
-      // Fetch will be triggered by realtime subscription, but refetching locally for safety
-      refetchShopping();
+      
+      if (!item.done) {
+        showToast('Completed item')
+      }
+      await refetchShopping();
     } catch (err) {
-      console.error('Error toggling item:', err);
+      // Revert on failure
+      setShoppingItems(prev => prev.map(i =>
+        i.id === item.id ? {...i, done: item.done} : i
+      ))
+      showToast('Failed to update', 'error')
+      console.error(err);
     }
   };
 
   // Remove checklist item
   const removeItem = async (item: ShoppingItem) => {
+    navigator.vibrate?.(10)
     try {
       const { error } = await supabase
         .from('shopping_items')
@@ -43,24 +59,33 @@ export default function ShoppingPage() {
         .eq('id', item.id);
       
       if (error) throw error;
-      refetchShopping();
+      showToast('Removed')
+      setSwipedId(null);
+      await refetchShopping();
     } catch (err) {
       console.error('Error removing item:', err);
+      showToast('Failed to remove', 'error')
     }
   };
 
   // Add checklist item
   const addItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputVal.trim() || !roomId) return;
+    if (!inputVal.trim() || !roomId || !userId) return;
 
     const newItemName = inputVal.trim();
     setInputVal("");
+    navigator.vibrate?.(10)
 
     try {
       const { error: insertError } = await supabase
         .from('shopping_items')
-        .insert({ room_id: roomId, name: newItemName, done: false });
+        .insert({ 
+          room_id: roomId, 
+          name: newItemName, 
+          done: false,
+          created_by: userId
+        });
 
       if (insertError) throw insertError;
 
@@ -68,18 +93,36 @@ export default function ShoppingPage() {
       await supabase.from('activity').insert({
         room_id: roomId,
         user_name: profile?.name || 'User',
-        action: `added ${newItemName} to shopping list 🛒`
+        action: `added ${newItemName} to shopping list`
       });
 
-      refetchShopping();
+      showToast('Added to list')
+
+      await Promise.all([
+        refetchShopping(),
+        refetchActivity()
+      ]);
     } catch (err) {
       console.error('Error adding item:', err);
+      showToast('Failed to add', 'error')
     }
   };
 
-  if (loading) {
+  if (loading && !initialized) {
     return (
-      <div className="w-8 h-8 border-2 border-[#9b7fe8] border-t-transparent rounded-full animate-spin mx-auto mt-20" />
+      <main className="flex-1 flex flex-col bg-[#111118] min-h-screen" style={{ padding: '20px 20px 120px 20px', maxWidth: 430, margin: '0 auto' }}>
+        <PageHeader title="Shopping List" showBack={false} />
+        <div className="flex gap-2.5">
+          <Skeleton height={50} borderRadius={12} className="flex-1" />
+          <Skeleton height={50} width={70} borderRadius={12} />
+        </div>
+        <div className="flex flex-col gap-3 mt-4">
+          <Skeleton height={56} borderRadius={16} />
+          <Skeleton height={56} borderRadius={16} />
+          <Skeleton height={56} borderRadius={16} />
+        </div>
+        <BottomNav active="shopping" />
+      </main>
     );
   }
 
@@ -87,100 +130,178 @@ export default function ShoppingPage() {
   const completedItems = items.filter((item) => item.done);
 
   return (
-    <main className="flex-1 flex flex-col gap-6 px-6 pt-5 pb-[120px] w-full relative">
-      <PageHeader title="Shopping List" showBack={false} />
+    <main className="flex-1 flex flex-col bg-[#111118] min-h-screen relative" style={{ padding: '20px 20px 120px 20px', maxWidth: 430, margin: '0 auto' }}>
+      <PullToRefresh onRefresh={refetchAll}>
+        <PageHeader title="Shopping List" showBack={false} />
 
-      {/* Add Item Form Row */}
-      <form onSubmit={addItem} className="flex gap-2.5">
-        <input
-          type="text"
-          placeholder="Add shopping item..."
-          value={inputVal}
-          onChange={(e) => setInputVal(e.target.value)}
-          className="flex-1 bg-white/[0.06] border border-white/[0.12] rounded-[12px] px-4 py-3 text-white placeholder-white/30 outline-none focus:border-[#9b7fe8]/50 transition-colors text-sm"
-        />
-        <button
-          type="submit"
-          className="bg-[#9b7fe8] text-white font-bold rounded-[12px] px-5 py-3 border-0 hover:bg-[#886cd4] transition-colors focus:outline-none text-sm whitespace-nowrap cursor-pointer"
-        >
-          Add
-        </button>
-      </form>
+        {/* Add Item Form Row */}
+        <form onSubmit={addItem} className="flex gap-2.5" style={{ marginBottom: 16 }}>
+          <input
+            type="text"
+            placeholder="Add shopping item..."
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            className="flex-1 bg-white/[0.06] border border-white/[0.10] rounded-[12px] px-4 py-3 text-white placeholder-white/25 outline-none focus:border-white/35 transition-colors text-[16px]"
+          />
+          <button
+            type="submit"
+            className="bg-white/12 border border-white/20 hover:bg-white/18 text-white px-5 rounded-[12px] font-bold text-sm cursor-pointer transition-colors focus:outline-none"
+          >
+            Add
+          </button>
+        </form>
 
-      {/* Active items list */}
-      <section className="flex flex-col gap-3">
-        {pendingItems.length > 0 ? (
-          pendingItems.map((item) => (
-            <GlassCard key={item.id} className="flex items-center gap-3 p-4">
-              {/* Checkbox circle */}
-              <button
-                type="button"
-                onClick={() => toggleItem(item)}
-                className="w-[22px] h-[22px] rounded-full border-2 border-white/20 flex items-center justify-center bg-transparent transition-colors focus:outline-none cursor-pointer"
-              >
-                {/* Unchecked space */}
-              </button>
-
-              {/* Item Name */}
-              <span className="text-white text-[15px] font-medium select-none">
-                {item.name}
-              </span>
-
-              {/* Trash/delete button */}
-              <button
-                type="button"
-                onClick={() => removeItem(item)}
-                className="ml-auto text-white/30 hover:text-white/60 transition-colors p-1 bg-transparent border-0 focus:outline-none cursor-pointer"
-                aria-label={`Delete ${item.name}`}
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </GlassCard>
-          ))
+        {items.length === 0 ? (
+          <section className="flex flex-col items-center justify-center py-20 text-center select-none animate-fade-in">
+            {/* Outline shopping bag SVG */}
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <path d="M16 10a4 4 0 01-8 0" />
+            </svg>
+            <span className="text-white font-medium text-[15px] mt-4">Your list is empty</span>
+            <span className="text-white/35 text-[13px] mt-1">Add items you need to buy</span>
+          </section>
         ) : (
-          <div className="text-center text-white/40 py-6 text-sm">
-            No active shopping items.
+          <div className="flex flex-col gap-[20px] mt-[16px]">
+            {/* Pending Section */}
+            {pendingItems.length > 0 && (
+              <section className="flex flex-col gap-[10px]" style={{ marginBottom: 20 }}>
+                <h2 className="text-white/40 text-[11px] font-semibold tracking-wider uppercase pl-1 select-none">
+                  Pending ({pendingItems.length})
+                </h2>
+                <div className="flex flex-col gap-[10px]">
+                  {pendingItems.map((item) => {
+                    const isSwiped = swipedId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="relative w-full overflow-hidden rounded-[16px]"
+                      >
+                        {/* Delete button behind card */}
+                        <div className="absolute right-0 top-0 bottom-0 w-[80px] bg-red-500/20 border border-red-500/30 flex items-center justify-center rounded-[16px]">
+                          <button
+                            onClick={() => removeItem(item)}
+                            className="w-full h-full text-red-200 font-bold text-xs flex items-center justify-center cursor-pointer border-0 bg-transparent focus:outline-none"
+                          >
+                            Delete
+                          </button>
+                        </div>
+
+                        {/* Foreground Card */}
+                        <div
+                          className="transition-transform duration-200 ease-out"
+                          style={{ transform: isSwiped ? 'translateX(-80px)' : 'translateX(0px)' }}
+                          onTouchStart={(e) => {
+                            setTouchStartX(e.touches[0].clientX);
+                            if (swipedId && swipedId !== item.id) {
+                              setSwipedId(null);
+                            }
+                          }}
+                          onTouchMove={(e) => {
+                            if (touchStartX === null) return;
+                            const diffX = touchStartX - e.touches[0].clientX;
+                            if (diffX > 50) {
+                              setSwipedId(item.id);
+                            } else if (diffX < -50) {
+                              setSwipedId(null);
+                            }
+                          }}
+                          onTouchEnd={() => setTouchStartX(null)}
+                        >
+                          <GlassCard className="flex items-center gap-[12px] py-[14px] px-[16px]">
+                            {/* Empty checkbox circle */}
+                            <button
+                              type="button"
+                              onClick={() => toggleItem(item)}
+                              className="w-[22px] h-[22px] rounded-full border border-white/20 bg-white/5 flex items-center justify-center transition-colors focus:outline-none cursor-pointer flex-shrink-0"
+                            />
+
+                            {/* Item name */}
+                            <span className="text-white text-[15px] font-semibold select-none truncate pr-2">
+                              {item.name}
+                            </span>
+                          </GlassCard>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* Completed Section */}
+            {completedItems.length > 0 && (
+              <section className="flex flex-col gap-[10px]">
+                <h2 className="text-white/40 text-[11px] font-semibold tracking-wider uppercase pl-1 select-none">
+                  Completed ({completedItems.length})
+                </h2>
+                <div className="flex flex-col gap-[10px]">
+                  {completedItems.map((item) => {
+                    const isSwiped = swipedId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="relative w-full overflow-hidden rounded-[16px]"
+                      >
+                        {/* Delete button behind card */}
+                        <div className="absolute right-0 top-0 bottom-0 w-[80px] bg-red-500/20 border border-red-500/30 flex items-center justify-center rounded-[16px]">
+                          <button
+                            onClick={() => removeItem(item)}
+                            className="w-full h-full text-red-200 font-bold text-xs flex items-center justify-center cursor-pointer border-0 bg-transparent focus:outline-none"
+                          >
+                            Delete
+                          </button>
+                        </div>
+
+                        {/* Foreground Card */}
+                        <div
+                          className="transition-transform duration-200 ease-out"
+                          style={{ transform: isSwiped ? 'translateX(-80px)' : 'translateX(0px)' }}
+                          onTouchStart={(e) => {
+                            setTouchStartX(e.touches[0].clientX);
+                            if (swipedId && swipedId !== item.id) {
+                              setSwipedId(null);
+                            }
+                          }}
+                          onTouchMove={(e) => {
+                            if (touchStartX === null) return;
+                            const diffX = touchStartX - e.touches[0].clientX;
+                            if (diffX > 50) {
+                              setSwipedId(item.id);
+                            } else if (diffX < -50) {
+                              setSwipedId(null);
+                            }
+                          }}
+                          onTouchEnd={() => setTouchStartX(null)}
+                        >
+                          <GlassCard className="flex items-center gap-[12px] py-[14px] px-[16px]">
+                            {/* Checked checkbox circle */}
+                            <button
+                              type="button"
+                              onClick={() => toggleItem(item)}
+                              className="w-[22px] h-[22px] rounded-full bg-white border border-white flex items-center justify-center transition-colors focus:outline-none cursor-pointer flex-shrink-0"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#111118" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            </button>
+
+                            {/* Strikethrough Item Name */}
+                            <span className="text-white/50 text-[15px] font-medium line-through select-none truncate pr-2">
+                              {item.name}
+                            </span>
+                          </GlassCard>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
           </div>
         )}
-      </section>
-
-      {/* Completed items section */}
-      {completedItems.length > 0 && (
-        <section className="flex flex-col gap-3 mt-2">
-          <h2 className="text-white/40 text-[11px] font-semibold tracking-wider uppercase mb-1">
-            COMPLETED
-          </h2>
-          <div className="flex flex-col gap-3 opacity-60">
-            {completedItems.map((item) => (
-              <GlassCard key={item.id} className="flex items-center gap-3 p-4">
-                {/* Checked checkbox circle */}
-                <button
-                  type="button"
-                  onClick={() => toggleItem(item)}
-                  className="w-[22px] h-[22px] rounded-full bg-[#9b7fe8] border-2 border-[#9b7fe8] flex items-center justify-center transition-colors focus:outline-none cursor-pointer text-white"
-                >
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                </button>
-
-                {/* Strikethrough Item Name */}
-                <span className="text-white/50 text-[15px] font-medium line-through select-none">
-                  {item.name}
-                </span>
-
-                {/* Trash/delete button */}
-                <button
-                  type="button"
-                  onClick={() => removeItem(item)}
-                  className="ml-auto text-white/30 hover:text-white/60 transition-colors p-1 bg-transparent border-0 focus:outline-none cursor-pointer"
-                  aria-label={`Delete ${item.name}`}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </GlassCard>
-            ))}
-          </div>
-        </section>
-      )}
+      </PullToRefresh>
 
       {/* Floating Bottom Nav */}
       <BottomNav active="shopping" />

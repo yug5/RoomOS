@@ -4,9 +4,9 @@
   "description": "Your digital home for roommates",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d0d14",
-  "theme_color": "#9b7fe8",
-  "orientation": "portrait",
+  "background_color": "#111118",
+  "theme_color": "#111118",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -19,6 +19,18 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add Expense",
+      "url": "/expenses",
+      "description": "Add a new shared expense"
+    },
+    {
+      "name": "Shopping List",
+      "url": "/shopping",
+      "description": "View shopping list"
     }
   ]
 }

@@ -42,3 +42,39 @@ export async function getProfile(userId: string) {
   if (error) throw error
   return data
 }
+
+// Google OAuth sign in
+export const signInWithGoogle = async () => {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent'
+      }
+    }
+  })
+  return { data, error }
+}
+
+// Send OTP to email
+export const sendOTP = async (email: string) => {
+  const { data, error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true
+    }
+  })
+  return { data, error }
+}
+
+// Verify OTP code
+export const verifyOTP = async (email: string, token: string) => {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: 'email'
+  })
+  return { data, error }
+}

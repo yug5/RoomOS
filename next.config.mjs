@@ -1,13 +1,23 @@
-import withPWA from 'next-pwa';
+import withPWA from 'next-pwa'
 
-const pwaConfig = withPWA({
+const pwaConfig = {
   dest: 'public',
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development'
-});
+  disable: process.env.NODE_ENV === 'development',
+  fallbacks: false,
+  runtimeCaching: [
+    {
+      urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'supabase-cache',
+        expiration: { maxEntries: 50, maxAgeSeconds: 300 }
+      }
+    }
+  ]
+}
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {};
-
-export default pwaConfig(nextConfig);
+export default withPWA(pwaConfig)({
+  // existing next config
+})
