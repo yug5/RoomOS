@@ -55,7 +55,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <InstallPrompt />
-      <div key={pathname} style={{ animation: 'pageFadeIn 0.15s ease-out' }}>
+      <div key={pathname} style={{ animation: 'pageFadeIn 0.12s ease-in-out', willChange: 'opacity' }}>
         {content}
       </div>
     </>
@@ -70,13 +70,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/logo.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#111118" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="RoomOS" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body style={{ 
         background: '#111118',

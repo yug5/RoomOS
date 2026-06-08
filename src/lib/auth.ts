@@ -43,16 +43,19 @@ export async function getProfile(userId: string) {
   return data
 }
 
+// Dynamic redirect URI for OAuth (works in dev + production)
+const getRedirectUri = () => {
+  if (typeof window === 'undefined') return ''
+  const url = new URL(window.location.origin)
+  return `${url.origin}/auth/callback`
+}
+
 // Google OAuth sign in
 export const signInWithGoogle = async () => {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
-      queryParams: {
-        access_type: 'offline',
-        prompt: 'consent'
-      }
+      redirectTo: getRedirectUri()
     }
   })
   return { data, error }
