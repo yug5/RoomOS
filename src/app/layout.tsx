@@ -17,7 +17,8 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
   const isPublicPage =
     pathname === '/login' ||
     pathname === '/onboarding' ||
-    pathname?.startsWith('/join')
+    pathname?.startsWith('/join') ||
+    pathname?.startsWith('/auth')
 
   useEffect(() => {
     setIsOnline(navigator.onLine)

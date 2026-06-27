@@ -1,9 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, sendOTP, verifyOTP } from '@/lib/auth'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [authMode, setAuthMode] = useState<'password'|'otp'>('password')
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
@@ -21,6 +23,43 @@ export default function LoginPage() {
   const [signupName, setSignupName] = useState('')
   const [signupOtp, setSignupOtp] = useState('')
   const [signupLoading, setSignupLoading] = useState(false)
+
+  // Forgot password states
+  const [showForgot, setShowForgot] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotError, setForgotError] = useState('')
+  const [forgotSuccess, setForgotSuccess] = useState(false)
+
+  const handleForgotPassword = async () => {
+    setForgotError('')
+    setForgotSuccess(false)
+    setForgotLoading(true)
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        forgotEmail.trim(),
+        {
+          redirectTo: `${window.location.origin}/auth/reset-password`
+        }
+      )
+
+      if (error) {
+        setForgotError(error.message)
+      } else {
+        setForgotSuccess(true)
+        setTimeout(() => {
+          setShowForgot(false)
+          setForgotEmail('')
+          setForgotSuccess(false)
+        }, 3000)
+      }
+    } catch {
+      setForgotError('Something went wrong')
+    } finally {
+      setForgotLoading(false)
+    }
+  }
 
   useEffect(() => {
     // Clear stale session on login page
@@ -48,23 +87,39 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInError) { setError(signInError.message); setLoading(false); return }
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { setLoading(false); return }
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password
+      })
+
+      if (error) {
+        setError(error.message)
+        setLoading(false)
+        return
+      }
+
+      // Wait a moment for session to persist
+      await new Promise(r => setTimeout(r, 500))
+
+      // Check if profile exists and has room
       const { data: prof } = await supabase
-        .from('profiles').select('room_id').eq('id', session.user.id).single()
+        .from('profiles')
+        .select('room_id')
+        .eq('id', data.user?.id)
+        .single()
+
       const pendingCode = localStorage.getItem('pendingInviteCode')
       if (pendingCode) {
         localStorage.removeItem('pendingInviteCode')
-        window.location.replace(`/join/${pendingCode}`)
-      } else if (prof?.room_id) {
-        window.location.replace('/')
+        window.location.href = `/join/${pendingCode}`
+      } else if (!prof?.room_id) {
+        router.push('/onboarding')
       } else {
-        window.location.replace('/onboarding')
+        // Force hard redirect
+        window.location.href = '/'
       }
     } catch {
-      setError('Something went wrong')
+      setError('Sign in failed')
     }
     setLoading(false)
   }
@@ -235,6 +290,92 @@ export default function LoginPage() {
     opacity: loading ? 0.6 : 1
   }
 
+  if (showForgot) {
+    return (
+      <div style={{ 
+        background: '#111118', minHeight: '100vh',
+        padding: '24px', maxWidth: '430px', margin: '0 auto'
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', 
+          marginBottom: 24, gap: 12
+        }}>
+          <button
+            onClick={() => setShowForgot(false)}
+            style={{
+              background: 'none', border: 'none',
+              color: 'rgba(255,255,255,0.60)',
+              fontSize: 24, cursor: 'pointer'
+            }}
+          >
+            ←
+          </button>
+          <h1 style={{ fontSize: 22, color: 'white', margin: 0 }}>
+            Reset Password
+          </h1>
+        </div>
+
+        <p style={{
+          color: 'rgba(255,255,255,0.50)', fontSize: 14,
+          marginBottom: 24, lineHeight: 1.5
+        }}>
+          Enter your email and we will send you a link to reset your password
+        </p>
+
+        <input
+          type="email"
+          placeholder="your@email.com"
+          value={forgotEmail}
+          onChange={(e) => setForgotEmail(e.target.value)}
+          style={{
+            width: '100%', padding: '14px 16px',
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 14, color: 'white',
+            fontSize: 16, marginBottom: 16,
+            outline: 'none'
+          }}
+        />
+
+        {forgotError && (
+          <p style={{
+            color: 'rgba(255,100,100,0.85)',
+            fontSize: 13, marginBottom: 12
+          }}>
+            {forgotError}
+          </p>
+        )}
+
+        {forgotSuccess && (
+          <p style={{
+            color: 'rgba(100,200,100,0.85)',
+            fontSize: 13, marginBottom: 12
+          }}>
+            Check your email for reset link
+          </p>
+        )}
+
+        <button
+          onClick={handleForgotPassword}
+          disabled={forgotLoading || !forgotEmail.trim()}
+          style={{
+            width: '100%', padding: '14px',
+            background: forgotLoading 
+              ? 'rgba(255,255,255,0.06)'
+              : 'rgba(255,255,255,0.10)',
+            border: '1px solid rgba(255,255,255,0.18)',
+            borderRadius: 14, color: 'white',
+            fontSize: 15, fontWeight: 600,
+            cursor: forgotLoading ? 'default' : 'pointer',
+            opacity: forgotLoading ? 0.6 : 1
+          }}
+        >
+          {forgotLoading ? 'Sending...' : 'Send Reset Link'}
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div style={{
       background: '#111118',
@@ -275,6 +416,7 @@ export default function LoginPage() {
             Your digital home
           </div>
         </div>
+
 
         {/* Auth mode tabs */}
         <div style={{
@@ -481,6 +623,21 @@ export default function LoginPage() {
                   style={{ ...buttonStyle, marginTop: 4 }}
                 >
                   {loading ? 'Please wait...' : 'Sign In'}
+                </button>
+                <button
+                  onClick={() => { navigator.vibrate?.(10); setShowForgot(true); }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.40)',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    marginTop: 12,
+                    fontFamily: 'inherit'
+                  }}
+                >
+                  Forgot password?
                 </button>
                 <button
                   onClick={() => { setIsSignUp(true); setError('') }}
