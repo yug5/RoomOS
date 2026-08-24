@@ -2,7 +2,6 @@
 
 A modern, mobile-first Progressive Web App (PWA) for roommates to manage shared expenses, chores, shopping lists, and more. Built with Next.js, TypeScript, and Supabase.
 
-![RoomOS Logo](public/logo.png)
 
 🔗 **[Live Demo](https://the-room-os.vercel.app)**
 
